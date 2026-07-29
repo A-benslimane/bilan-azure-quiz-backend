@@ -1,0 +1,139 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+	<parent>
+		<groupId>org.springframework.boot</groupId>
+		<artifactId>spring-boot-starter-parent</artifactId>
+		<version>3.5.16</version>
+		<relativePath/>
+	</parent>
+
+	<groupId>com.alderichoarau</groupId>
+	<artifactId>azure-quiz-backend</artifactId>
+	<version>0.0.1-SNAPSHOT</version>
+	<name>azure-quiz-backend</name>
+	<description>Backend API for Microsoft Azure certification revision quizzes</description>
+
+	<properties>
+		<java.version>21</java.version>
+		<springdoc-openapi.version>2.8.17</springdoc-openapi.version>
+		<!-- AZURE -->
+		<spring-cloud-azure-dependencies.version>7.3.0</spring-cloud-azure-dependencies.version>
+		<azure-functions-maven-plugin.version>1.42.0</azure-functions-maven-plugin.version>
+	</properties>
+
+	<dependencies>
+		<!-- ===================== Spring Boot ===================== -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-actuator</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-data-jpa</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-validation</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-web</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-data-redis</artifactId>
+		</dependency>
+		<!-- Auto-starts/stops docker-compose.yml (Postgres + Redis) whenever the app runs
+		     locally: IDE "Run", `./mvnw spring-boot:run`, tests. A plain "classic" run no
+		     longer requires a manual `docker compose up -d` first. `optional` so Spring
+		     Boot's repackage plugin excludes it from the production jar: this must never be
+		     active on Azure App Service, only for local dev. -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-docker-compose</artifactId>
+			<optional>true</optional>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-test</artifactId>
+			<scope>test</scope>
+		</dependency>
+
+		<!-- ===================== Data Base ===================== -->
+		<dependency>
+			<groupId>org.flywaydb</groupId>
+			<artifactId>flyway-core</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.flywaydb</groupId>
+			<artifactId>flyway-database-postgresql</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.postgresql</groupId>
+			<artifactId>postgresql</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+
+		<!-- ===================== Lombok ===================== -->
+		<dependency>
+			<groupId>org.projectlombok</groupId>
+			<artifactId>lombok</artifactId>
+			<optional>true</optional>
+		</dependency>
+
+		<!-- ===================== API Documentation ===================== -->
+		<dependency>
+			<groupId>org.springdoc</groupId>
+			<artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+			<version>${springdoc-openapi.version}</version>
+		</dependency>
+
+		<!-- =====================  Azure cloud dependencies  ===================== -->
+		<!-- Autoconfigures a BlobServiceClient bean from spring.cloud.azure.storage.blob.*
+		     (application.yml): account-name + this Web App's managed identity in prod,
+		     a plain connection-string against local Azurite (docker-compose.yml) in dev.
+		     Version pinned explicitly to match spring-cloud-azure-dependencies below rather
+		     than relying on it: that BOM is imported as a plain dependency here, not inside
+		     dependencyManagement, where scope=import normally has no effect. Left as-is
+		     (pre-existing, unrelated to this change) rather than restructured. -->
+		<dependency>
+			<groupId>com.azure.spring</groupId>
+			<artifactId>spring-cloud-azure-starter-storage-blob</artifactId>
+			<version>${spring-cloud-azure-dependencies.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>com.azure.spring</groupId>
+			<artifactId>spring-cloud-azure-dependencies</artifactId>
+			<version>${spring-cloud-azure-dependencies.version}</version>
+			<type>pom</type>
+			<scope>import</scope>
+		</dependency>
+	</dependencies>
+
+	<build>
+		<resources>
+			<resource>
+				<!-- "*" (Ant pattern) only matches files directly in this directory, not
+				     subdirectories - it was silently excluding db/migration/*.sql (Flyway
+				     migrations), static/, and templates/ from the built jar. Flyway then
+				     found zero migrations to run, so no tables ever got created, and
+				     Hibernate's schema validation failed with "missing table [...]" at
+				     startup. "**" matches recursively, same as Maven's implicit default
+				     when no <includes> is set at all. -->
+				<filtering>true</filtering>
+				<directory>${basedir}/src/main/resources</directory>
+				<includes>
+					<include>**</include>
+				</includes>
+			</resource>
+		</resources>
+		<plugins>
+			<plugin>
+				<groupId>org.springframework.boot</groupId>
+				<artifactId>spring-boot-maven-plugin</artifactId>
+			</plugin>
+		</plugins>
+	</build>
+</project>
