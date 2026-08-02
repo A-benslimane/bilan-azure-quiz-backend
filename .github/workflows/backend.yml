@@ -1,0 +1,114 @@
+name: Backend CI/CD
+
+on:
+  pull_request:
+    branches:
+      - main
+
+  push:
+    branches:
+      - main
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  OWNER_TAG: "abdel-benslimane"
+  COMPONENT_TAG: "backend"
+
+jobs:
+  build-test:
+    name: Build, tests et sécurité
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Récupérer le dépôt
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Installer Java 21
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Autoriser Maven Wrapper
+        run: chmod +x mvnw
+
+      - name: Compiler et lancer les tests
+        run: ./mvnw --batch-mode clean package
+
+      - name: Scanner les secrets avec Gitleaks
+        uses: gitleaks/gitleaks-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Enregistrer le fichier JAR
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-jar
+          path: target/azure-quiz-backend-0.0.1-SNAPSHOT.jar
+          if-no-files-found: error
+
+  deploy:
+    name: Déploiement Azure
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: build-test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Télécharger le fichier JAR
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-jar
+          path: artifact
+
+      - name: Connexion Azure avec OIDC
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Rechercher la Web App par tags
+        id: webapp
+        shell: bash
+        run: |
+          WEBAPP_NAME=$(az resource list \
+            --resource-type "Microsoft.Web/sites" \
+            --tag "owner=${OWNER_TAG}" \
+            --query "[?tags.component=='${COMPONENT_TAG}'].name | [0]" \
+            --output tsv)
+
+          if [ -z "$WEBAPP_NAME" ]; then
+            echo "Aucune Web App trouvée avec les tags owner=${OWNER_TAG} et component=${COMPONENT_TAG}."
+            exit 1
+          fi
+
+          echo "Web App trouvée : $WEBAPP_NAME"
+          echo "name=$WEBAPP_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Rechercher le fichier JAR
+        id: jar
+        shell: bash
+        run: |
+          JAR_FILE=$(find artifact -type f -name "*.jar" | head -n 1)
+
+          if [ -z "$JAR_FILE" ]; then
+            echo "Aucun fichier JAR trouvé."
+            exit 1
+          fi
+
+          echo "Fichier trouvé : $JAR_FILE"
+          echo "path=$JAR_FILE" >> "$GITHUB_OUTPUT"
+
+      - name: Déployer le backend
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ steps.webapp.outputs.name }}
+          package: ${{ steps.jar.outputs.path }}
