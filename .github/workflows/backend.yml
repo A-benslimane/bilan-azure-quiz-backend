@@ -80,9 +80,8 @@ jobs:
         shell: bash
         run: |
           WEBAPP_NAME=$(az resource list \
-            --resource-type "Microsoft.Web/sites" \
             --tag "owner=${OWNER_TAG}" \
-            --query "[?tags.component=='${COMPONENT_TAG}'].name | [0]" \
+            --query "[?type=='Microsoft.Web/sites' && tags.component=='${COMPONENT_TAG}'].name | [0]" \
             --output tsv)
 
           if [ -z "$WEBAPP_NAME" ]; then
@@ -112,3 +111,4 @@ jobs:
         with:
           app-name: ${{ steps.webapp.outputs.name }}
           package: ${{ steps.jar.outputs.path }}
+          
