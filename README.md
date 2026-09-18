@@ -120,3 +120,47 @@ associated modules/questions (a dedicated Flyway migration, generated from the s
 - Provisioning Azure infrastructure (App Service, Static Web App, PostgreSQL Flexible Server)
 - Importing the real question content (supplied separately, converted into Flyway migrations).
 
+## DevSecOps security pipeline
+
+This repository runs a dedicated GitHub Actions security workflow for each backend security category required by the TP. The goal is to keep findings visible in pull requests and Job Summaries while blocking merges only for checks that have a clear, actionable threshold.
+
+| Category | Tool | What is checked | CI policy |
+|---|---|---|---|
+| SAST | SonarQube Cloud | Java source code, security, reliability, maintainability and test coverage | Blocking through the Sonar Quality Gate |
+| SCA | Trivy + GitHub Dependency Review | Current Maven dependency tree and dependencies introduced by the PR | Blocking on fixable HIGH/CRITICAL findings |
+| Secrets | Gitleaks | Git history and repository content for exposed credentials/secrets | Blocking |
+| Container | Trivy | Built backend image and packaged Java dependencies | Blocking on fixable HIGH/CRITICAL findings |
+| IaC / configuration | Trivy config | Dockerfile and supported configuration files | Blocking on HIGH/CRITICAL misconfigurations |
+| DAST | OWASP ZAP | Running backend API discovered from the OpenAPI document | Informative; findings are reviewed before becoming blocking |
+
+### Why these tools
+
+- **SonarQube Cloud** provides pull-request decoration and a visible Quality Gate, so SAST results are readable without digging through raw logs.
+- **Trivy** covers both software composition analysis and container/configuration scanning with the same CVE database and severity model.
+- **GitHub Dependency Review** complements Trivy by focusing specifically on dependency changes introduced by a pull request.
+- **Gitleaks** scans the complete Git history, which catches secrets that may no longer exist in the current working tree.
+- **OWASP ZAP** exercises the application while it is running, complementing SAST with dynamic analysis.
+
+### Remediation performed during the TP
+
+The pipeline was not configured to simply ignore findings. Real dependency/container findings were corrected and the scans were rerun:
+
+- PostgreSQL JDBC was upgraded to **42.7.12** after Trivy reported **CVE-2026-54291 (HIGH)**.
+- Netty was upgraded to **4.1.137.Final** to remediate HIGH findings present in the packaged application.
+- Embedded Tomcat was upgraded to **10.1.59** to remediate CRITICAL/HIGH findings in the container image.
+- GitHub Actions are pinned to immutable commit SHAs, and the OWASP ZAP container image is pinned by digest.
+
+### Test coverage
+
+JaCoCo runs during Maven `verify` and generates `target/site/jacoco/jacoco.xml`. SonarQube Cloud imports this XML report so test coverage is included in the project analysis.
+
+### Workflow files
+
+- `.github/workflows/sonar.yml`
+- `.github/workflows/sca.yml`
+- `.github/workflows/secrets-scan.yml`
+- `.github/workflows/container-iac.yml`
+- `.github/workflows/dast.yml`
+
+The existing `.github/workflows/backend.yml` remains responsible for the normal backend build/tests and the Azure deployment on pushes to `main`.
+

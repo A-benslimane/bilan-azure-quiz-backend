@@ -1,0 +1,129 @@
+name: Container & IaC - Trivy
+
+on:
+  pull_request:
+    branches:
+      - main
+
+  push:
+    branches:
+      - main
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  container-scan:
+    name: Container - Trivy Image Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Récupérer le dépôt
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Construire l'image Docker
+        run: docker build --pull -t azure-quiz-backend:${{ github.sha }} .
+
+      - name: Scanner l'image avec Trivy
+        id: trivy-image
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: azure-quiz-backend:${{ github.sha }}
+          scan-type: image
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          format: table
+          output: trivy-container.txt
+          exit-code: 1
+
+      - name: Publier le résultat Container dans le Job Summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Container — Trivy"
+            echo
+            echo "**Image :** azure-quiz-backend:${GITHUB_SHA}"
+            echo
+            echo "**Seuil bloquant :** HIGH / CRITICAL avec correctif disponible"
+            echo
+            if [ -s trivy-container.txt ]; then
+              echo '```text'
+              sed -n '1,200p' trivy-container.txt
+              echo '```'
+            else
+              echo "Aucune vulnérabilité HIGH ou CRITICAL détectée."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Enregistrer le rapport Container
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: trivy-container-report
+          path: trivy-container.txt
+          if-no-files-found: warn
+
+      - name: Bloquer si l'image contient des vulnérabilités critiques
+        if: steps.trivy-image.outcome == 'failure'
+        run: |
+          echo "Des vulnérabilités HIGH ou CRITICAL corrigibles ont été détectées dans l'image."
+          exit 1
+
+  iac-scan:
+    name: IaC - Trivy Config Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Récupérer le dépôt
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Scanner les configurations IaC avec Trivy
+        id: trivy-iac
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: config
+          scan-ref: .
+          severity: HIGH,CRITICAL
+          format: table
+          output: trivy-iac.txt
+          exit-code: 1
+
+      - name: Publier le résultat IaC dans le Job Summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## IaC — Trivy"
+            echo
+            echo "**Périmètre :** Dockerfile et configurations détectées par Trivy"
+            echo
+            echo "**Seuil bloquant :** HIGH / CRITICAL"
+            echo
+            if [ -s trivy-iac.txt ]; then
+              echo '```text'
+              sed -n '1,200p' trivy-iac.txt
+              echo '```'
+            else
+              echo "Aucune mauvaise configuration HIGH ou CRITICAL détectée."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Enregistrer le rapport IaC
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: trivy-iac-report
+          path: trivy-iac.txt
+          if-no-files-found: warn
+
+      - name: Bloquer si des mauvaises configurations critiques sont détectées
+        if: steps.trivy-iac.outcome == 'failure'
+        run: |
+          echo "Des mauvaises configurations HIGH ou CRITICAL ont été détectées."
+          exit 1

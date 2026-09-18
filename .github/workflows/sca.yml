@@ -1,0 +1,87 @@
+name: SCA - Dependency Security
+
+on:
+  pull_request:
+    branches:
+      - main
+
+  push:
+    branches:
+      - main
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sca-trivy:
+    name: SCA - Trivy Maven Dependencies
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Récupérer le dépôt
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Scanner les dépendances avec Trivy
+        id: trivy
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          format: table
+          output: trivy-sca.txt
+          exit-code: 1
+
+      - name: Publier le résultat dans le Job Summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## SCA — Trivy"
+            echo
+            echo "**Périmètre :** dépendances Maven actuelles"
+            echo
+            echo "**Seuil bloquant :** HIGH / CRITICAL avec correctif disponible"
+            echo
+
+            if [ -s trivy-sca.txt ]; then
+              echo '```text'
+              sed -n '1,200p' trivy-sca.txt
+              echo '```'
+            else
+              echo "Aucune vulnérabilité HIGH ou CRITICAL détectée."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Enregistrer le rapport Trivy
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: sca-trivy-report
+          path: trivy-sca.txt
+          if-no-files-found: warn
+
+      - name: Bloquer si des CVE critiques sont détectées
+        if: steps.trivy.outcome == 'failure'
+        run: |
+          echo "Des vulnérabilités HIGH ou CRITICAL corrigibles ont été détectées."
+          exit 1
+
+  dependency-review:
+    name: Dependency Review - PR changes
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Récupérer le dépôt
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Vérifier les dépendances introduites par la PR
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: high
