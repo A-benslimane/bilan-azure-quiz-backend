@@ -11,13 +11,12 @@ on:
 
   workflow_dispatch:
 
-permissions:
-  contents: read
-
 jobs:
   dast:
     name: DAST - OWASP ZAP API Scan
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
       - name: Récupérer le dépôt
@@ -72,6 +71,8 @@ jobs:
       - name: Publier le résultat DAST dans le Job Summary
         if: always()
         shell: bash
+        env:
+          ZAP_OUTCOME: ${{ steps.zap.outcome }}
         run: |
           {
             echo "## DAST — OWASP ZAP"
@@ -82,7 +83,7 @@ jobs:
             echo
             echo "**Politique :** informative — les alertes DAST sont revues avant de devenir bloquantes."
             echo
-            echo "**Résultat du scanner :** \`${{ steps.zap.outcome }}\`"
+            echo "**Résultat du scanner :** \`$ZAP_OUTCOME\`"
             echo
 
             if [ -s zap-reports/zap-report.md ]; then
@@ -97,9 +98,7 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: dast-zap-report
-          path: |
-            zap-reports/
-            backend-dast.log
+          path: zap-reports/
           if-no-files-found: warn
 
       - name: Arrêter l'environnement local
